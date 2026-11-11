@@ -348,6 +348,7 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
     val haCount = act.hearth.prefs.entities.size
     val haReqs = remember(haCount) { List(haCount) { FocusRequester() } }
     val haTop = remember { mutableStateOf(0) }
+    val haShown = remember { mutableStateOf(1) }        // rows of tiles currently on screen
     var title by remember { mutableStateOf("") }
     var inGrid by remember { mutableStateOf(false) }
     LaunchedEffect(act.homeTicks, favourites.isNotEmpty()) {
@@ -390,7 +391,7 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
 
         // ---- home view
         Column(Modifier.fillMaxWidth().height(h).offset { IntOffset(0, shift.value.roundToPx()) }) {
-            HaArea(act, entities, status, Modifier.weight(1f), haReqs, haTop) { atHome(); title = it }
+            HaArea(act, entities, status, Modifier.weight(1f), haReqs, haTop, haShown) { atHome(); title = it }
             Text(
                 title, color = Palette.text, fontWeight = FontWeight.Light, fontSize = 26.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -416,11 +417,13 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
                             // Down from a favourite lands on the app in the same column of All apps.
                             onMoveKey = { key ->
                                 moveKey(key) ||
-                                // Up from a favourite goes to the Home Assistant row you can see, same column
-                                // (not the hidden rows that sit between it and the bar).
+                                // Up from a favourite goes to the bottom row of tiles you can see, same column -
+                                // the row nearest the bar (not the hidden rows that sit between it and the bar).
                                 (key == Key.DirectionUp && haReqs.isNotEmpty() && runCatching {
                                     val haCols = act.hearth.prefs.haColumns
-                                    haReqs[minOf(haTop.value * haCols + minOf(k, haCols - 1), haReqs.size - 1)].requestFocus()
+                                    val lastRow = (haReqs.size - 1) / haCols
+                                    val row = minOf(haTop.value + haShown.value - 1, lastRow)
+                                    haReqs[minOf(row * haCols + minOf(k, haCols - 1), haReqs.size - 1)].requestFocus()
                                 }.isSuccess) ||
                                 (key == Key.DirectionDown && appReqs.isNotEmpty() &&
                                     runCatching { appReqs[minOf(k, cols - 1, appReqs.size - 1)].requestFocus() }.isSuccess)
@@ -495,6 +498,7 @@ private fun HaArea(
     modifier: Modifier,
     reqs: List<FocusRequester>,
     topState: androidx.compose.runtime.MutableState<Int>,
+    shownState: androidx.compose.runtime.MutableState<Int>,
     onTitle: (String) -> Unit,
 ) {
     act.layoutVersion
@@ -530,6 +534,7 @@ private fun HaArea(
                 val rows = (ids.size + cols - 1) / cols
                 val shown = minOf(fit, rows)
                 LaunchedEffect(cols, ids.size) { top = 0 }
+                androidx.compose.runtime.SideEffect { shownState.value = shown }
                 Column {
                     PagedRows(ids.size, cols, TILE_H, gap, 14.dp, shown, top, inset, requesters = reqs) { i ->
                         val id = ids[i]
