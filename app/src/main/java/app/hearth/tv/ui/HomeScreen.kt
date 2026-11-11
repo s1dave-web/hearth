@@ -537,12 +537,17 @@ private fun PagedRows(
     val rows = (count + cols - 1) / cols
     val requesters = remember(count) { List(count) { FocusRequester() } }
     val stride = rowHeight + gap
-    val offset by animateDpAsState(-(stride * top), tween(280, easing = FastOutSlowInEasing), label = "rows")
+    val goalOffset = -(stride * top)
+    val offset by animateDpAsState(goalOffset, tween(MOVE_MS, easing = FastOutSlowInEasing), label = "rows")
+    // Tell the tiles how much further the window will move this slide (read when they report their position).
+    val pending = remember { PendingShift() }
+    pending.dy = with(LocalDensity.current) { (goalOffset - offset).toPx() }
     Box(modifier.fillMaxWidth().height(stride * shown - gap + inset * 2).clipToBounds()) {
         Column(
             Modifier.fillMaxWidth().wrapContentHeight(Alignment.Top, unbounded = true).offset(y = offset + inset).padding(horizontal = inset),
             verticalArrangement = Arrangement.spacedBy(gap),
         ) {
+            CompositionLocalProvider(LocalPendingShift provides pending) {
             for (r in 0 until rows) {
                 Row(Modifier.fillMaxWidth().height(rowHeight), horizontalArrangement = Arrangement.spacedBy(hGap)) {
                     for (c in 0 until cols) {
@@ -564,6 +569,7 @@ private fun PagedRows(
                         ) { if (i < count) cell(i) }
                     }
                 }
+            }
             }
         }
     }

@@ -143,18 +143,33 @@ class FocusRing {
 
 val LocalFocusRing = compositionLocalOf<FocusRing?> { null }
 
+/**
+ * How far (px) a sliding row window still has to move. Tiles inside it report where they will *end up*,
+ * so the highlight goes straight to the resting place and arrives with the row instead of chasing it.
+ */
+class PendingShift { var dy = 0f }
+val LocalPendingShift = compositionLocalOf<PendingShift?> { null }
+
+/** One duration for the highlight and the row slides, so they move as one. */
+const val MOVE_MS = 240
+
 /** Grows a little when focused. In a layer with a [FocusRing] the ring glides to it; otherwise it gets its own outline. */
 fun Modifier.focusLook(focused: Boolean, radius: Int = 14): Modifier = composed {
     val scale by animateFloatAsState(if (focused) FOCUS_SCALE else 1f, spring(dampingRatio = 0.8f, stiffness = 500f), label = "focus")
     val ring = LocalFocusRing.current
+    val pending = LocalPendingShift.current
     val bounds = remember { arrayOfNulls<Rect>(1) }
     if (ring != null) {
-        LaunchedEffect(focused) { if (focused) { ring.radius = radius.toFloat(); ring.owner = bounds; bounds[0]?.let { ring.target = it } } }
+        // Claim the highlight in the same frame focus arrives (a LaunchedEffect runs a frame later,
+        // during which the highlight would still follow the previous tile as its row starts to slide).
+        androidx.compose.runtime.SideEffect {
+            if (focused && ring.owner !== bounds) { ring.radius = radius.toFloat(); ring.owner = bounds; bounds[0]?.let { ring.target = it } }
+        }
     }
     this
         .then(
             if (ring == null) Modifier else Modifier.onGloballyPositioned { c ->
-                val r = Rect(c.positionInRoot(), c.size.toSize())
+                val r = Rect(c.positionInRoot() + Offset(0f, pending?.dy ?: 0f), c.size.toSize())
                 bounds[0] = r
                 if (focused) ring.target = r      // follows the item while lists scroll or views slide
             }
@@ -173,21 +188,31 @@ fun FocusRingLayer(ring: FocusRing, visible: Boolean) {
     // Plain holders, not state: they are written while composing and only read when drawing.
     val from = remember { arrayOf(Rect.Zero) }
     val drawnRef = remember { arrayOf(Rect.Zero) }
+    val ownerRef = remember { arrayOfNulls<Any>(1) }
+    // True from the frame focus moves until the glide has actually started: hold still meanwhile.
+    // (Without this the frame drew one frame at the destination before the glide began - a visible jump.)
+    val starting = remember { booleanArrayOf(false) }
     val alpha by animateFloatAsState(if (visible && !ring.sliding && ring.target != null) 1f else 0f, tween(if (ring.sliding) 60 else 140), label = "ring")
-    // Each move: start from wherever the ring is drawn and ease onto the new item.
-    LaunchedEffect(ring.owner) {
-        if (drawnRef[0] == Rect.Zero || ring.sliding) { progress.snapTo(1f); return@LaunchedEffect }
-        from[0] = drawnRef[0]
-        progress.snapTo(0f)
-        progress.animateTo(1f, tween(200, easing = FastOutSlowInEasing))
+    if (ring.owner !== ownerRef[0]) {
+        ownerRef[0] = ring.owner
+        if (drawnRef[0] != Rect.Zero && !ring.sliding) { from[0] = drawnRef[0]; starting[0] = true }
     }
-    LaunchedEffect(ring.sliding) { if (ring.sliding) progress.snapTo(1f) }
+    // Each move: ease from wherever the frame was onto the new item, in step with any row slide.
+    LaunchedEffect(ring.owner) {
+        if (!starting[0]) { progress.snapTo(1f); return@LaunchedEffect }
+        progress.snapTo(0f)
+        starting[0] = false
+        progress.animateTo(1f, tween(MOVE_MS, easing = FastOutSlowInEasing))
+    }
+    LaunchedEffect(ring.sliding) { if (ring.sliding) { starting[0] = false; progress.snapTo(1f) } }
     val t = ring.target
     if (t != null) {
         // Grow the frame with the item, so it hugs the scaled-up tile.
         val g = (FOCUS_SCALE - 1f) / 2f
         val goal = Rect(t.left - t.width * g, t.top - t.height * g, t.right + t.width * g, t.bottom + t.height * g)
-        drawnRef[0] = if (progress.value >= 1f || from[0] == Rect.Zero) goal else lerp(from[0], goal, progress.value)
+        val pv = progress.value          // always read, so every animation frame redraws the frame
+        val p = if (starting[0]) 0f else pv
+        drawnRef[0] = if (p >= 1f || from[0] == Rect.Zero) goal else lerp(from[0], goal, p)
     }
     val drawn = drawnRef[0]
     val density = LocalDensity.current
