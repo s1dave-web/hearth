@@ -231,23 +231,41 @@ fun FocusRingLayer(ring: FocusRing, visible: Boolean) {
         else latest(ring)?.let { ring.target = it }
     }
     Canvas(Modifier.fillMaxSize()) {
-        val t = (if (ring.sliding) null else latest(ring)) ?: ring.target ?: return@Canvas
+        // These are re-checked every frame while drawing, because focus can move (and a slide can start)
+        // after this layer last composed but before it draws: in that frame the new item's position is
+        // already set while the "hide"/"glide from here" state isn't yet - which drew the frame off-screen.
+        // Read every animated value up front, before any early return: a value read only on some
+        // frames stops triggering redraws on the others (the highlight then froze or jumped).
+        val pv = progress.value
+        val a = alpha.value
+        val target = ring.target
+        val sliding = ring.sliding
+        val ownerNow = ring.owner
+        if (sliding) return@Canvas                                         // hidden for the whole slide
+        if (ownerNow !== ownerRef[0]) {                                    // focus just moved: stay put this frame
+            val held = drawnRef[0]
+            if (held != Rect.Zero && a > 0f) drawFrame(held, a, ring.radius)
+            return@Canvas
+        }
+        val t = latest(ring) ?: target ?: return@Canvas
         // Grow the frame with the item, so it hugs the scaled-up tile.
         val g = (FOCUS_SCALE - 1f) / 2f
         val goal = Rect(t.left - t.width * g, t.top - t.height * g, t.right + t.width * g, t.bottom + t.height * g)
-        val pv = progress.value
         val pr = if (starting[0]) 0f else pv
         val r = if (pr >= 1f || from[0] == Rect.Zero) goal else lerp(from[0], goal, pr)
         drawnRef[0] = r
-        val a = alpha.value
         if (a <= 0f) return@Canvas
-        val corner = CornerRadius((ring.radius * FOCUS_SCALE).dp.toPx())
-        val w = 1.5.dp.toPx()
-        // a faint, tight halo, then the crisp frame
-        drawRoundRect(Color.White.copy(alpha = 0.12f * a), r.topLeft - Offset(w, w), r.size.copy(r.width + w * 2, r.height + w * 2),
-            CornerRadius(corner.x + w), style = Stroke(w * 1.2f))
-        drawRoundRect(Color.White.copy(alpha = a), r.topLeft, r.size, corner, style = Stroke(w))
+        drawFrame(r, a, ring.radius)
     }
+}
+
+/** The highlight itself: a faint, tight halo, then the crisp frame. */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawFrame(r: Rect, a: Float, radius: Float) {
+    val corner = CornerRadius((radius * FOCUS_SCALE).dp.toPx())
+    val w = 1.5.dp.toPx()
+    drawRoundRect(Color.White.copy(alpha = 0.12f * a), r.topLeft - Offset(w, w), r.size.copy(r.width + w * 2, r.height + w * 2),
+        CornerRadius(corner.x + w), style = Stroke(w * 1.2f))
+    drawRoundRect(Color.White.copy(alpha = a), r.topLeft, r.size, corner, style = Stroke(w))
 }
 
 // ------------------------------------------------------------------ how each kind of entity looks and acts

@@ -345,13 +345,17 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
         if (act.toFavourites > 0) runCatching { favReqs[lastFav.coerceIn(0, favReqs.lastIndex)].requestFocus() }
     }
     val appReqs = remember(others.size) { List(others.size) { FocusRequester() } }
+    val haCount = act.hearth.prefs.entities.size
+    val haReqs = remember(haCount) { List(haCount) { FocusRequester() } }
+    val haTop = remember { mutableStateOf(0) }
     var title by remember { mutableStateOf("") }
     var inGrid by remember { mutableStateOf(false) }
-    LaunchedEffect(act.homeTicks) {
+    LaunchedEffect(act.homeTicks, favourites.isNotEmpty()) {
         act.moving = null
         act.allApps = false
         delay(80)
-        runCatching { dock.requestFocus() }
+        // Start on the first favourite (the apps load a moment after the screen, hence the key on them).
+        runCatching { (favReqs.firstOrNull() ?: dock).requestFocus() }
     }
     // Back from all apps: the slide is driven by allApps, focus has to follow.
     LaunchedEffect(act.allApps) { if (!act.allApps && inGrid) runCatching { dock.requestFocus() } }
@@ -386,7 +390,7 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
 
         // ---- home view
         Column(Modifier.fillMaxWidth().height(h).offset { IntOffset(0, shift.value.roundToPx()) }) {
-            HaArea(act, entities, status, Modifier.weight(1f)) { atHome(); title = it }
+            HaArea(act, entities, status, Modifier.weight(1f), haReqs, haTop) { atHome(); title = it }
             Text(
                 title, color = Palette.text, fontWeight = FontWeight.Light, fontSize = 26.sp,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -411,7 +415,14 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
                             onFocused = { atHome(); title = a.label; lastFav = k; act.onFavourites = true },
                             // Down from a favourite lands on the app in the same column of All apps.
                             onMoveKey = { key ->
-                                moveKey(key) || (key == Key.DirectionDown && appReqs.isNotEmpty() &&
+                                moveKey(key) ||
+                                // Up from a favourite goes to the Home Assistant row you can see, same column
+                                // (not the hidden rows that sit between it and the bar).
+                                (key == Key.DirectionUp && haReqs.isNotEmpty() && runCatching {
+                                    val haCols = act.hearth.prefs.haColumns
+                                    haReqs[minOf(haTop.value * haCols + minOf(k, haCols - 1), haReqs.size - 1)].requestFocus()
+                                }.isSuccess) ||
+                                (key == Key.DirectionDown && appReqs.isNotEmpty() &&
                                     runCatching { appReqs[minOf(k, cols - 1, appReqs.size - 1)].requestFocus() }.isSuccess)
                             },
                             onLongClick = { act.overlay = Overlay.AppActions(a.pkg) },
@@ -477,11 +488,19 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
  * moves, and small arrows say there is more above or below.
  */
 @Composable
-private fun HaArea(act: HomeActivity, entities: Map<String, Entity>, status: HaStatus, modifier: Modifier, onTitle: (String) -> Unit) {
+private fun HaArea(
+    act: HomeActivity,
+    entities: Map<String, Entity>,
+    status: HaStatus,
+    modifier: Modifier,
+    reqs: List<FocusRequester>,
+    topState: androidx.compose.runtime.MutableState<Int>,
+    onTitle: (String) -> Unit,
+) {
     act.layoutVersion
     val ids = act.hearth.prefs.entities
     val cols = act.hearth.prefs.haColumns
-    var top by remember { mutableStateOf(0) }
+    var top by topState
     Column(modifier.padding(horizontal = SIDE)) {
         Row(Modifier.padding(start = 8.dp, top = 10.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("HOME", color = Palette.dim, fontSize = 12.sp, letterSpacing = 3.sp)
@@ -499,7 +518,10 @@ private fun HaArea(act: HomeActivity, entities: Map<String, Entity>, status: HaS
             val inset = 8.dp
             val gap = 10.dp
             // How many whole rows fit, leaving room for the "more" hint underneath.
-            val fit = (((maxHeight - HINT_H - inset * 2 + gap) / (TILE_H + gap)).toInt()).coerceAtLeast(1)
+            val room = (((maxHeight - HINT_H - inset * 2 + gap) / (TILE_H + gap)).toInt()).coerceAtLeast(1)
+            // "Rows of tiles on screen" setting: 0 = as many as fit.
+            val wanted = act.hearth.prefs.haRows
+            val fit = if (wanted > 0) minOf(wanted, room) else room
             if (status == HaStatus.NotSetUp || ids.isEmpty()) {
                 Box(Modifier.padding(inset).width(320.dp)) {
                     WideTile("Add your Home Assistant", "Set up from your phone", onFocused = { onTitle("Home Assistant") }) { act.overlay = Overlay.Setup }
@@ -509,7 +531,7 @@ private fun HaArea(act: HomeActivity, entities: Map<String, Entity>, status: HaS
                 val shown = minOf(fit, rows)
                 LaunchedEffect(cols, ids.size) { top = 0 }
                 Column {
-                    PagedRows(ids.size, cols, TILE_H, gap, 14.dp, shown, top, inset) { i ->
+                    PagedRows(ids.size, cols, TILE_H, gap, 14.dp, shown, top, inset, requesters = reqs) { i ->
                         val id = ids[i]
                         val e = entities[id]
                         val focused: () -> Unit = {
@@ -599,6 +621,9 @@ private fun PagedRows(
                                         ev.key == Key.DirectionDown && r < rows - 1 -> runCatching { reqs[minOf(i + cols, count - 1)].requestFocus() }.isSuccess
                                         ev.key == Key.DirectionUp && r > 0 -> runCatching { reqs[i - cols].requestFocus() }.isSuccess
                                         ev.key == Key.DirectionUp && upFromTop != null -> upFromTop(c)
+                                        // Left/right stop at the ends of a row (they'd otherwise wander into hidden rows or the header).
+                                        ev.key == Key.DirectionLeft && c == 0 -> true
+                                        ev.key == Key.DirectionRight && (c == cols - 1 || i == count - 1) -> true
                                         else -> false
                                     }
                                 }

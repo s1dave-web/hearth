@@ -140,6 +140,7 @@ class SetupServer(private val context: Context) {
             .put("names", JSONObject(p.names))
             .put("weather", p.weather)
             .put("haColumns", p.haColumns)
+            .put("haRows", p.haRows)
             .put("appColumns", p.appColumns)
             .put("favouriteCount", p.favouriteCount)
             .put("favourites", JSONArray(p.favourites.orEmpty()))
@@ -162,6 +163,7 @@ class SetupServer(private val context: Context) {
         j.optJSONObject("names")?.let { n -> p.names = n.keys().asSequence().associateWith { n.getString(it) } }
         if (j.has("weather")) p.weather = j.getString("weather")
         if (j.has("haColumns")) p.haColumns = j.getInt("haColumns").coerceIn(3, 7)
+        if (j.has("haRows")) p.haRows = j.getInt("haRows").coerceIn(0, 3)
         if (j.has("appColumns")) p.appColumns = j.getInt("appColumns").coerceIn(3, 6)
         if (j.has("favouriteCount")) p.favouriteCount = j.getInt("favouriteCount").coerceIn(3, 6)
         list("favourites")?.let { p.favourites = it }

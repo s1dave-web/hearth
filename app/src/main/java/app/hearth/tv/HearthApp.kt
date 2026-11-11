@@ -93,6 +93,10 @@ class Prefs(context: Context) {
     var favouriteCount: Int
         get() = sp.getInt("favourite_count", 4)
         set(v) = sp.edit().putInt("favourite_count", v).apply()
+    /** Rows of Home Assistant tiles shown at once (0 = as many as fit); the rest page in with MORE. */
+    var haRows: Int
+        get() = sp.getInt("ha_rows", 0)
+        set(v) = sp.edit().putInt("ha_rows", v).apply()
     /** Apps per row in the all-apps view. */
     var appColumns: Int
         get() = sp.getInt("app_columns", 4)

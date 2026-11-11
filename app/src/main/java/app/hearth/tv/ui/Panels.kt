@@ -244,6 +244,10 @@ fun SettingsPanel(act: HomeActivity, status: HaStatus) {
             act.layoutVersion
             SettingRow("Home Assistant", statusWords(status)) { act.overlay = Overlay.Setup }
             SettingRow("Edit tiles", "From your phone") { act.overlay = Overlay.Setup }
+            SettingRow("Rows of tiles on screen", if (app.prefs.haRows == 0) "As many as fit" else "${app.prefs.haRows}") {
+                app.prefs.haRows = (app.prefs.haRows + 1) % 4          // as many as fit, 1, 2, 3
+                act.layoutVersion++
+            }
             SettingRow("Tiles per row", "${app.prefs.haColumns}") {
                 app.prefs.haColumns = if (app.prefs.haColumns >= 7) 3 else app.prefs.haColumns + 1
                 act.layoutVersion++
