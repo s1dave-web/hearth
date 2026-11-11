@@ -208,13 +208,10 @@ fun FocusRingLayer(ring: FocusRing, visible: Boolean) {
     // (otherwise the frame shows one frame at the destination before gliding - a visible jump).
     val starting = remember { booleanArrayOf(false) }
     val hasTarget by remember { derivedStateOf { ring.target != null } }
-    // Vanishes instantly when the screen starts sliding (a fade-out would show it darting off-screen),
-    // then fades back in on the selected item once the slide has finished.
+    // Fades in when the layer first has something selected; during view slides it rides along (see below).
     val alpha = remember { Animatable(0f) }
-    val show = visible && !ring.sliding && hasTarget
-    LaunchedEffect(show, ring.sliding) {
-        if (!show && ring.sliding) alpha.snapTo(0f) else alpha.animateTo(if (show) 1f else 0f, tween(120))
-    }
+    val show = visible && hasTarget
+    LaunchedEffect(show) { alpha.animateTo(if (show) 1f else 0f, tween(120)) }
     val owner = ring.owner                       // the only per-move recomposition
     if (owner !== ownerRef[0]) {
         ownerRef[0] = owner
@@ -241,7 +238,16 @@ fun FocusRingLayer(ring: FocusRing, visible: Boolean) {
         val target = ring.target
         val sliding = ring.sliding
         val ownerNow = ring.owner
-        if (sliding) return@Canvas                                         // hidden for the whole slide
+        if (sliding) {
+            // While the screen slides between Home and All apps the frame rides along on the selected
+            // item at its live position - no glide (it would race the slide) and no waiting to reappear.
+            val live = latest(ring) ?: target ?: return@Canvas
+            val g = (FOCUS_SCALE - 1f) / 2f
+            val r = Rect(live.left - live.width * g, live.top - live.height * g, live.right + live.width * g, live.bottom + live.height * g)
+            drawnRef[0] = r
+            if (a > 0f) drawFrame(r, a, ring.radius)
+            return@Canvas
+        }
         if (ownerNow !== ownerRef[0]) {                                    // focus just moved: stay put this frame
             val held = drawnRef[0]
             if (held != Rect.Zero && a > 0f) drawFrame(held, a, ring.radius)
