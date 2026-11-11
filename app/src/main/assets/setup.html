@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hearth setup</title>
+<style>
+  :root { --bg:#101214; --card:#1a1d21; --line:#2a2e34; --text:#eef0f2; --dim:#9aa1aa; --accent:#f2a541; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:20px 16px 80px; }
+  h1 { font-weight:600; font-size:24px; margin:4px 0 4px; }
+  h1 span { color:var(--accent); }
+  h2 { font-size:17px; margin:0 0 10px; }
+  p.lead { color:var(--dim); margin:0 0 20px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:16px; }
+  label { display:block; font-size:14px; color:var(--dim); margin:10px 0 4px; }
+  input, textarea, select { width:100%; background:#0c0e10; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:11px 12px; font:inherit; }
+  textarea { height:84px; font-family:ui-monospace, monospace; font-size:13px; }
+  button { background:var(--accent); color:#1b1204; border:0; border-radius:10px; padding:11px 18px; font:inherit; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); padding:6px 10px; font-weight:400; }
+  button:disabled { opacity:.5; }
+  .row { display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap; }
+  .msg { font-size:14px; } .ok { color:#7bd88f; } .err { color:#ff8a80; }
+  .hint { font-size:13px; color:var(--dim); margin-top:6px; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { display:flex; align-items:center; gap:8px; padding:9px 2px; border-top:1px solid var(--line); }
+  li:first-child { border-top:0; }
+  li .name { flex:1; min-width:0; }
+  li .name small { display:block; color:var(--dim); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  li .state { color:var(--dim); font-size:13px; white-space:nowrap; }
+  #chosen li .name { font-weight:500; }
+  .filters { display:flex; gap:8px; }
+  .filters select { width:40%; }
+  #all { max-height:55vh; overflow:auto; margin-top:10px; }
+  .empty { color:var(--dim); font-size:14px; padding:8px 0; }
+  .sticky { position:sticky; bottom:12px; display:flex; justify-content:flex-end; }
+</style>
+</head>
+<body>
+<main>
+  <h1><span>Hearth</span> setup</h1>
+  <p class="lead">Connect your TV's home screen to Home Assistant and pick the tiles it shows.</p>
+
+  <section id="connect">
+    <h2>1. Home Assistant</h2>
+    <label for="url">Address, as the TV can reach it</label>
+    <input id="url" placeholder="http://192.168.1.20:8123" autocomplete="off" autocapitalize="off">
+    <label for="token">Long-lived access token</label>
+    <textarea id="token" placeholder="Paste the token here" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+    <div class="hint">In Home Assistant: your profile → Security → Long-lived access tokens → Create token. Leave blank to keep the saved one.</div>
+    <div class="row"><button id="go">Connect</button><span id="cmsg" class="msg"></span></div>
+  </section>
+
+  <section id="pick" hidden>
+    <h2>2. Tiles on the home screen</h2>
+    <div class="hint" style="margin-top:0">Type a shorter name for a tile if you like, e.g. "Lamp" instead of the full Home Assistant name.</div>
+    <ul id="chosen"></ul>
+    <div id="none" class="empty">No tiles yet. Add some from the list below.</div>
+    <label for="weather">Weather in the header</label>
+    <select id="weather"></select>
+    <label for="q">Add tiles</label>
+    <div class="filters">
+      <input id="q" placeholder="Search, e.g. bedroom" autocomplete="off">
+      <select id="dom"><option value="">All types</option></select>
+    </div>
+    <ul id="all"></ul>
+  </section>
+  <section id="backup">
+    <h2>Backup</h2>
+    <p class="hint" style="margin-top:0">Save your tiles, names, favourites, layout and wallpaper to a file, or restore them on this or another TV. The Home Assistant token is never included.</p>
+    <div class="row">
+      <button class="ghost" id="export">Download settings</button>
+      <label class="ghost" style="margin:0;display:inline-block;border:1px solid var(--line);border-radius:10px;padding:6px 10px;color:var(--text);cursor:pointer">
+        Restore from file<input type="file" id="import" accept=".json,application/json" hidden>
+      </label>
+      <span id="bmsg" class="msg"></span>
+    </div>
+  </section>
+  <div class="sticky" id="savebar" hidden><span id="smsg" class="msg" style="margin-right:12px;align-self:center"></span><button id="save">Save to TV</button></div>
+</main>
+<script>
+const code = new URLSearchParams(location.search).get('k') || '';
+const $ = id => document.getElementById(id);
+let all = [], chosen = [], names = {};
+
+async function api(method, path, body) {
+  const r = await fetch(path, { method, headers: { 'X-Code': code, 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
+  const j = await r.json().catch(() => ({ error: 'No answer from the TV' }));
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const byId = id => all.find(e => e.id === id);
+
+function render() {
+  $('none').hidden = chosen.length > 0;
+  $('chosen').innerHTML = chosen.map((id, i) => {
+    const e = byId(id) || { name: id, state: '?' };
+    return `<li><span class="name"><input data-name="${esc(id)}" value="${esc(names[id] || '')}" placeholder="${esc(e.name)}" aria-label="Name on the TV"><small>${esc(id)}</small></span>
+      <button class="ghost" data-up="${i}" ${i ? '' : 'disabled'} aria-label="Move up">↑</button>
+      <button class="ghost" data-down="${i}" ${i < chosen.length - 1 ? '' : 'disabled'} aria-label="Move down">↓</button>
+      <button class="ghost" data-del="${i}" aria-label="Remove">✕</button></li>`;
+  }).join('');
+  const q = $('q').value.trim().toLowerCase(), d = $('dom').value;
+  const list = all.filter(e => e.id.split('.')[0] !== 'weather' && !chosen.includes(e.id) && (!d || e.id.startsWith(d + '.'))
+    && (!q || e.name.toLowerCase().includes(q) || e.id.includes(q))).slice(0, 150);
+  $('all').innerHTML = list.length ? list.map(e => `<li><span class="name">${esc(e.name)}<small>${esc(e.id)}</small></span>
+      <span class="state">${esc(e.state)}</span><button class="ghost" data-add="${esc(e.id)}">Add</button></li>`).join('')
+    : '<li class="empty">Nothing matches.</li>';
+}
+
+function show(j) {
+  all = j.all; chosen = j.entities.filter(byId); names = j.names || {};
+  const doms = [...new Set(all.map(e => e.id.split('.')[0]))].filter(d => d !== 'weather').sort();
+  $('dom').innerHTML = '<option value="">All types</option>' + doms.map(d => `<option>${d}</option>`).join('');
+  const w = all.filter(e => e.id.startsWith('weather.'));
+  $('weather').innerHTML = '<option value="">None</option>' + w.map(e => `<option value="${esc(e.id)}">${esc(e.name)}</option>`).join('');
+  $('weather').value = j.weather || (w[0] && w[0].id) || '';
+  $('pick').hidden = false; $('savebar').hidden = false;
+  render();
+}
+
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('button'); if (!b) return;
+  if (b.dataset.add) { chosen.push(b.dataset.add); render(); }
+  else if (b.dataset.del) { chosen.splice(+b.dataset.del, 1); render(); }
+  else if (b.dataset.up) { const i = +b.dataset.up; [chosen[i - 1], chosen[i]] = [chosen[i], chosen[i - 1]]; render(); }
+  else if (b.dataset.down) { const i = +b.dataset.down; [chosen[i + 1], chosen[i]] = [chosen[i], chosen[i + 1]]; render(); }
+});
+document.addEventListener('input', ev => { if (ev.target.dataset.name) names[ev.target.dataset.name] = ev.target.value; });
+$('q').oninput = render; $('dom').onchange = render;
+
+$('go').onclick = async () => {
+  $('go').disabled = true; $('cmsg').className = 'msg'; $('cmsg').textContent = 'Connecting…';
+  try {
+    show(await api('POST', '/api/connect', { url: $('url').value, token: $('token').value }));
+    $('token').value = ''; $('cmsg').className = 'msg ok'; $('cmsg').textContent = '✓ Connected';
+  } catch (e) { $('cmsg').className = 'msg err'; $('cmsg').textContent = e.message; }
+  $('go').disabled = false;
+};
+$('export').onclick = async () => {
+  try {
+    const j = await api('GET', '/api/export');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(j, null, 2)], { type: 'application/json' }));
+    a.download = 'hearth-settings-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    $('bmsg').className = 'msg ok'; $('bmsg').textContent = '✓ Downloaded';
+  } catch (e) { $('bmsg').className = 'msg err'; $('bmsg').textContent = e.message; }
+};
+$('import').onchange = async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  try {
+    await api('POST', '/api/import', JSON.parse(await f.text()));
+    $('bmsg').className = 'msg ok'; $('bmsg').textContent = '✓ Restored - look at the TV';
+    const s = await api('GET', '/api/state');
+    $('url').value = s.url || '';
+    if (s.connected) show(await api('GET', '/api/entities'));
+    else { $('cmsg').className = 'msg err'; $('cmsg').textContent = 'New address: paste a token for it and Connect'; }
+  } catch (e) { $('bmsg').className = 'msg err'; $('bmsg').textContent = e.message.includes('JSON') ? 'Not a valid settings file' : e.message; }
+  ev.target.value = '';
+};
+$('save').onclick = async () => {
+  $('save').disabled = true;
+  try {
+    await api('POST', '/api/entities', { entities: chosen, weather: $('weather').value, names: Object.fromEntries(chosen.map(id => [id, names[id] || ''])) });
+    $('smsg').className = 'msg ok'; $('smsg').textContent = '✓ Saved - look at the TV';
+  } catch (e) { $('smsg').className = 'msg err'; $('smsg').textContent = e.message; }
+  $('save').disabled = false;
+};
+
+(async () => {
+  try {
+    const s = await api('GET', '/api/state');
+    $('url').value = s.url || '';
+    if (s.connected) { $('cmsg').textContent = 'Loading…'; show(await api('GET', '/api/entities')); $('cmsg').className = 'msg ok'; $('cmsg').textContent = '✓ Connected'; }
+  } catch (e) { $('cmsg').className = 'msg err'; $('cmsg').textContent = e.message; }
+})();
+</script>
+</body>
+</html>

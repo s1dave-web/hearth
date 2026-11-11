@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A house with a flame: "hearth" -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#F2A541" android:pathData="M54,28l28,22v30h-56v-30zM32,53v23h44v-23l-22,-17z" />
+    <path android:fillColor="#F2A541" android:pathData="M54,50c5,6 8,10 8,15a8,8 0,0 1,-16 0c0,-4 2,-7 4,-9c0,3 1,5 3,5c1,-4 1,-7 1,-11z" />
+</vector>

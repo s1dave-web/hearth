@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.Hearth" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/background</item>
+        <item name="android:windowShowWallpaper">false</item>
+    </style>
+</resources>
