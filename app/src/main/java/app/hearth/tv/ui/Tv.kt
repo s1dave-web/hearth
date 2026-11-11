@@ -8,6 +8,7 @@ import androidx.compose.animation.core.VectorConverter
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -187,50 +188,51 @@ fun Modifier.focusLook(focused: Boolean, radius: Int = 14): Modifier = composed 
         )
 }
 
-/** Draws the gliding highlight for [ring] over the layer's content. */
+/**
+ * Draws the gliding highlight for [ring] over the layer's content.
+ * All the per-frame work happens while drawing (not composing), so a moving highlight only redraws itself.
+ */
 @Composable
 fun FocusRingLayer(ring: FocusRing, visible: Boolean) {
     val progress = remember { Animatable(1f) }
-    // Plain holders, not state: they are written while composing and only read when drawing.
+    // Plain holders, not state: written while composing/drawing, only read when drawing.
     val from = remember { arrayOf(Rect.Zero) }
     val drawnRef = remember { arrayOf(Rect.Zero) }
     val ownerRef = remember { arrayOfNulls<Any>(1) }
-    // True from the frame focus moves until the glide has actually started: hold still meanwhile.
-    // (Without this the frame drew one frame at the destination before the glide began - a visible jump.)
+    // True from the frame focus moves until the glide has actually started: hold still meanwhile
+    // (otherwise the frame shows one frame at the destination before gliding - a visible jump).
     val starting = remember { booleanArrayOf(false) }
-    val alpha by animateFloatAsState(if (visible && !ring.sliding && ring.target != null) 1f else 0f, tween(if (ring.sliding) 60 else 140), label = "ring")
-    if (ring.owner !== ownerRef[0]) {
-        ownerRef[0] = ring.owner
+    val hasTarget by remember { derivedStateOf { ring.target != null } }
+    val alpha = animateFloatAsState(if (visible && !ring.sliding && hasTarget) 1f else 0f, tween(if (ring.sliding) 60 else 120), label = "ring")
+    val owner = ring.owner                       // the only per-move recomposition
+    if (owner !== ownerRef[0]) {
+        ownerRef[0] = owner
         if (drawnRef[0] != Rect.Zero && !ring.sliding) { from[0] = drawnRef[0]; starting[0] = true }
     }
-    // Each move: ease from wherever the frame was onto the new item, in step with any row slide.
-    LaunchedEffect(ring.owner) {
+    LaunchedEffect(owner) {
         if (!starting[0]) { progress.snapTo(1f); return@LaunchedEffect }
         progress.snapTo(0f)
         starting[0] = false
         progress.animateTo(1f, moveSpec())
     }
     LaunchedEffect(ring.sliding) { if (ring.sliding) { starting[0] = false; progress.snapTo(1f) } }
-    val t = ring.target
-    if (t != null) {
+    Canvas(Modifier.fillMaxSize()) {
+        val t = ring.target ?: return@Canvas
         // Grow the frame with the item, so it hugs the scaled-up tile.
         val g = (FOCUS_SCALE - 1f) / 2f
         val goal = Rect(t.left - t.width * g, t.top - t.height * g, t.right + t.width * g, t.bottom + t.height * g)
-        val pv = progress.value          // always read, so every animation frame redraws the frame
-        val p = if (starting[0]) 0f else pv
-        drawnRef[0] = if (p >= 1f || from[0] == Rect.Zero) goal else lerp(from[0], goal, p)
-    }
-    val drawn = drawnRef[0]
-    val density = LocalDensity.current
-    Canvas(Modifier.fillMaxSize()) {
-        if (alpha <= 0f) return@Canvas
-        val r = drawn
-        val corner = CornerRadius(with(density) { (ring.radius * FOCUS_SCALE).dp.toPx() })
-        val w = with(density) { 2.dp.toPx() }
-        // a faint halo hugging the frame (stays inside the gap between tiles), then the crisp frame
-        drawRoundRect(Color.White.copy(alpha = 0.16f * alpha), r.topLeft - Offset(w, w), r.size.copy(r.width + w * 2, r.height + w * 2),
-            CornerRadius(corner.x + w), style = Stroke(w * 1.5f))
-        drawRoundRect(Color.White.copy(alpha = alpha), r.topLeft, r.size, corner, style = Stroke(w))
+        val pv = progress.value
+        val pr = if (starting[0]) 0f else pv
+        val r = if (pr >= 1f || from[0] == Rect.Zero) goal else lerp(from[0], goal, pr)
+        drawnRef[0] = r
+        val a = alpha.value
+        if (a <= 0f) return@Canvas
+        val corner = CornerRadius((ring.radius * FOCUS_SCALE).dp.toPx())
+        val w = 1.5.dp.toPx()
+        // a faint, tight halo, then the crisp frame
+        drawRoundRect(Color.White.copy(alpha = 0.12f * a), r.topLeft - Offset(w, w), r.size.copy(r.width + w * 2, r.height + w * 2),
+            CornerRadius(corner.x + w), style = Stroke(w * 1.2f))
+        drawRoundRect(Color.White.copy(alpha = a), r.topLeft, r.size, corner, style = Stroke(w))
     }
 }
 

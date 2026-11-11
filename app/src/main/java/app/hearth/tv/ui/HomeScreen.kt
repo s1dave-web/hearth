@@ -14,6 +14,10 @@ import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.ui.draw.clipToBounds
@@ -310,7 +314,7 @@ private fun RoundButton(icon: Int, description: String, tint: Color = Palette.te
     Box(
         Modifier.size(56.dp).focusLook(focused, radius = 28)
             .clip(CircleShape)
-            .background(androidx.compose.animation.animateColorAsState(if (focused) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.06f), moveSpec(), label = "btn").value)
+            .animatedBackground(if (focused) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.06f))
             .border(1.dp, Color.White.copy(alpha = 0.14f), CircleShape)
             .tvClick(onFocus = { focused = it }, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -365,14 +369,14 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
     BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
         val h = maxHeight
         val goal = if (act.allApps) -h else 0.dp
-        val shift by animateDpAsState(goal, tween(300), label = "slide")
+        val shift = animateDpAsState(goal, tween(300), label = "slide")
         // Hide the selector while the screen slides, so it doesn't fly past the clock on the way.
         val ring = LocalFocusRing.current
-        val sliding = kotlin.math.abs((shift - goal).value) > 0.5f
+        val sliding by remember(goal) { derivedStateOf { kotlin.math.abs((shift.value - goal).value) > 0.5f } }
         androidx.compose.runtime.SideEffect { ring?.sliding = sliding }
 
         // ---- home view
-        Column(Modifier.fillMaxWidth().height(h).offset(y = shift)) {
+        Column(Modifier.fillMaxWidth().height(h).offset { IntOffset(0, shift.value.roundToPx()) }) {
             HaArea(act, entities, status, Modifier.weight(1f)) { atHome(); title = it }
             Text(
                 title, color = Palette.text, fontWeight = FontWeight.Light, fontSize = 26.sp,
@@ -412,7 +416,7 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
         }
 
         // ---- all-apps view, one screen below
-        Column(Modifier.fillMaxWidth().height(h).offset(y = shift + h)) {
+        Column(Modifier.fillMaxWidth().height(h).offset { IntOffset(0, (shift.value + h).roundToPx()) }) {
             Text(
                 "▴  ALL APPS", color = Palette.dim, fontSize = 12.sp, letterSpacing = 3.sp,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp),
@@ -514,6 +518,12 @@ private fun HaArea(act: HomeActivity, entities: Map<String, Entity>, status: HaS
 
 private val HINT_H = 16.dp
 
+/** A background colour that fades with the highlight; the fade only redraws, it doesn't rebuild the tile. */
+private fun Modifier.animatedBackground(color: Color): Modifier = composed {
+    val c = androidx.compose.animation.animateColorAsState(color, moveSpec(), label = "bg")
+    drawBehind { drawRect(c.value) }
+}
+
 /**
  * A grid that shows [shown] whole rows at a time inside a window and slides the rows (never a cut-off
  * tile) to keep the focused one in view. Every tile stays composed and placed, just clipped, so the
@@ -538,13 +548,18 @@ private fun PagedRows(
     val requesters = remember(count) { List(count) { FocusRequester() } }
     val stride = rowHeight + gap
     val goalOffset = -(stride * top)
-    val offset by animateDpAsState(goalOffset, moveSpec(), label = "rows")
+    val offset = animateDpAsState(goalOffset, moveSpec(), label = "rows")
     // Tell the tiles how much further the window will move this slide (read when they report their position).
     val pending = remember { PendingShift() }
-    pending.dy = with(LocalDensity.current) { (goalOffset - offset).toPx() }
+
     Box(modifier.fillMaxWidth().height(stride * shown - gap + inset * 2).clipToBounds()) {
         Column(
-            Modifier.fillMaxWidth().wrapContentHeight(Alignment.Top, unbounded = true).offset(y = offset + inset).padding(horizontal = inset),
+            Modifier.fillMaxWidth().wrapContentHeight(Alignment.Top, unbounded = true).offset {
+                // Read while placing, so a slide doesn't rebuild every tile each frame. Also tells the
+                // tiles how far the window still has to go (see PendingShift).
+                pending.dy = (goalOffset - offset.value).toPx()
+                IntOffset(0, (offset.value + inset).roundToPx())
+            }.padding(horizontal = inset),
             verticalArrangement = Arrangement.spacedBy(gap),
         ) {
             CompositionLocalProvider(LocalPendingShift provides pending) {
@@ -599,15 +614,12 @@ private fun EntityTile(act: HomeActivity, e: Entity, onFocused: () -> Unit) {
             .fillMaxWidth().height(TILE_H)
             .focusLook(focused, radius = 18)
             .clip(RoundedCornerShape(18.dp))
-            .background(
-                androidx.compose.animation.animateColorAsState(
-                    when {
-                        focused -> TILE_FOCUSED
-                        lit -> TILE_LIT
-                        else -> TILE_BG
-                    },
-                    moveSpec(), label = "tile",
-                ).value
+            .animatedBackground(
+                when {
+                    focused -> TILE_FOCUSED
+                    lit -> TILE_LIT
+                    else -> TILE_BG
+                }
             )
             .tvClick(
                 onFocus = { focused = it; if (it) onFocused() },
@@ -663,7 +675,7 @@ private fun WideTile(title: String, action: String, onFocused: () -> Unit, onCli
             .fillMaxWidth().height(TILE_H)
             .focusLook(focused, radius = 18)
             .clip(RoundedCornerShape(18.dp))
-            .background(androidx.compose.animation.animateColorAsState(if (focused) TILE_FOCUSED else TILE_BG, moveSpec(), label = "tile").value)
+            .animatedBackground(if (focused) TILE_FOCUSED else TILE_BG)
             .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(18.dp))
             .tvClick(onFocus = { focused = it; if (it) onFocused() }, onClick = onClick)
             .padding(14.dp),
