@@ -151,6 +151,11 @@ val LocalFocusRing = compositionLocalOf<FocusRing?> { null }
 class PendingShift { var dy = 0f }
 val LocalPendingShift = compositionLocalOf<PendingShift?> { null }
 
+/** The selected item's most recent position (it keeps its own copy up to date, focused or not). */
+private fun latest(ring: FocusRing): Rect? = (ring.owner as? Array<*>)?.getOrNull(0) as? Rect
+
+
+
 /**
  * One timing for everything that reacts to a remote press: the highlight, the tile's colour and growth,
  * and row slides. Short, and front-loaded (most of the distance in the first few frames) so it feels
@@ -215,9 +220,12 @@ fun FocusRingLayer(ring: FocusRing, visible: Boolean) {
         starting[0] = false
         progress.animateTo(1f, moveSpec())
     }
-    LaunchedEffect(ring.sliding) { if (ring.sliding) { starting[0] = false; progress.snapTo(1f) } }
+    LaunchedEffect(ring.sliding) {
+        if (ring.sliding) { starting[0] = false; progress.snapTo(1f) }
+        else latest(ring)?.let { ring.target = it }
+    }
     Canvas(Modifier.fillMaxSize()) {
-        val t = ring.target ?: return@Canvas
+        val t = (if (ring.sliding) null else latest(ring)) ?: ring.target ?: return@Canvas
         // Grow the frame with the item, so it hugs the scaled-up tile.
         val g = (FOCUS_SCALE - 1f) / 2f
         val goal = Rect(t.left - t.width * g, t.top - t.height * g, t.right + t.width * g, t.bottom + t.height * g)

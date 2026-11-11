@@ -338,6 +338,9 @@ private val NoAutoScroll = object : BringIntoViewSpec {
 @Composable
 private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaStatus, favourites: List<AppEntry>, others: List<AppEntry>) {
     val dock = remember { FocusRequester() }
+    // One requester per favourite and per app in the grid, so up/down keep the column between them.
+    val favReqs = remember(favourites.size) { List(favourites.size) { FocusRequester() } }
+    val appReqs = remember(others.size) { List(others.size) { FocusRequester() } }
     var title by remember { mutableStateOf("") }
     var inGrid by remember { mutableStateOf(false) }
     LaunchedEffect(act.homeTicks) {
@@ -373,7 +376,9 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
         // Hide the selector while the screen slides, so it doesn't fly past the clock on the way.
         val ring = LocalFocusRing.current
         val sliding by remember(goal) { derivedStateOf { kotlin.math.abs((shift.value - goal).value) > 0.5f } }
-        androidx.compose.runtime.SideEffect { ring?.sliding = sliding }
+        // Read here (not only inside SideEffect) so the end of a slide recomposes and shows the highlight again.
+        val isSliding = sliding
+        androidx.compose.runtime.SideEffect { ring?.sliding = isSliding }
 
         // ---- home view
         Column(Modifier.fillMaxWidth().height(h).offset { IntOffset(0, shift.value.roundToPx()) }) {
@@ -395,11 +400,16 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val barTileH = minOf((maxWidth - 28.dp - GAP * (favCount - 1)) / favCount * 9f / 16f, APP_H)
                 Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(GAP)) {
-                    for (a in favourites) {
+                    for ((k, a) in favourites.withIndex()) {
+                        val moveKey = moveKeys(a, rows = false)
                         AppTile(
-                            a, moving = act.moving == a.pkg, modifier = Modifier.weight(1f), showLabel = false, tileHeight = barTileH,
+                            a, moving = act.moving == a.pkg, modifier = Modifier.weight(1f).focusRequester(favReqs[k]), showLabel = false, tileHeight = barTileH,
                             onFocused = { atHome(); title = a.label },
-                            onMoveKey = moveKeys(a, rows = false),
+                            // Down from a favourite lands on the app in the same column of All apps.
+                            onMoveKey = { key ->
+                                moveKey(key) || (key == Key.DirectionDown && appReqs.isNotEmpty() &&
+                                    runCatching { appReqs[minOf(k, cols - 1, appReqs.size - 1)].requestFocus() }.isSuccess)
+                            },
                             onLongClick = { act.overlay = Overlay.AppActions(a.pkg) },
                         ) { click(a) }
                     }
@@ -432,7 +442,9 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
                 var top by remember { mutableStateOf(0) }
                 LaunchedEffect(cols, others.size) { top = 0 }
                 Column {
-                    PagedRows(others.size, cols, rowH, gap, GAP, shown, top, inset, Modifier.padding(top = 10.dp), arrows = { act.moving == null }) { i ->
+                    PagedRows(others.size, cols, rowH, gap, GAP, shown, top, inset, Modifier.padding(top = 10.dp), arrows = { act.moving == null }, requesters = appReqs,
+                        // Up from the top row lands on the favourite in the same column.
+                        upFromTop = { col -> favReqs.isNotEmpty() && runCatching { favReqs[minOf(col, favReqs.size - 1)].requestFocus() }.isSuccess }) { i ->
                         val a = others[i]
                         AppTile(
                             a, moving = act.moving == a.pkg, modifier = Modifier, tileHeight = tileW * 9f / 16f,
@@ -542,10 +554,15 @@ private fun PagedRows(
     modifier: Modifier = Modifier,
     /** False while something else owns the arrows (moving an app). */
     arrows: () -> Boolean = { true },
+    /** Where Up from the top row goes (otherwise the remote picks the nearest thing above). */
+    upFromTop: ((column: Int) -> Boolean)? = null,
+    /** Supply these to focus a cell from outside; otherwise the grid makes its own. */
+    requesters: List<FocusRequester>? = null,
     cell: @Composable (index: Int) -> Unit,
 ) {
     val rows = (count + cols - 1) / cols
-    val requesters = remember(count) { List(count) { FocusRequester() } }
+    val own = remember(count) { List(count) { FocusRequester() } }
+    val reqs = requesters?.takeIf { it.size == count } ?: own
     val stride = rowHeight + gap
     val goalOffset = -(stride * top)
     val offset = animateDpAsState(goalOffset, moveSpec(), label = "rows")
@@ -570,13 +587,14 @@ private fun PagedRows(
                         Box(
                             Modifier.weight(1f).then(
                                 if (i >= count) Modifier
-                                else Modifier.focusRequester(requesters[i]).onPreviewKeyEvent { ev ->
+                                else Modifier.focusRequester(reqs[i]).onPreviewKeyEvent { ev ->
                                     if (ev.type != KeyEventType.KeyDown || !arrows()) return@onPreviewKeyEvent false
                                     // Down goes to the row below even when it's shorter (lands on its last tile);
                                     // Up goes straight up. From the last/first row the remote leaves the grid as normal.
                                     when {
-                                        ev.key == Key.DirectionDown && r < rows - 1 -> runCatching { requesters[minOf(i + cols, count - 1)].requestFocus() }.isSuccess
-                                        ev.key == Key.DirectionUp && r > 0 -> runCatching { requesters[i - cols].requestFocus() }.isSuccess
+                                        ev.key == Key.DirectionDown && r < rows - 1 -> runCatching { reqs[minOf(i + cols, count - 1)].requestFocus() }.isSuccess
+                                        ev.key == Key.DirectionUp && r > 0 -> runCatching { reqs[i - cols].requestFocus() }.isSuccess
+                                        ev.key == Key.DirectionUp && upFromTop != null -> upFromTop(c)
                                         else -> false
                                     }
                                 }
