@@ -38,6 +38,10 @@ class HomeActivity : ComponentActivity() {
     var moving by mutableStateOf<String?>(null)
     /** True while the all-apps view is showing instead of the home view. */
     var allApps by mutableStateOf(false)
+    /** Bumped by Back on the home view: jump straight to the favourites bar. */
+    var toFavourites by mutableStateOf(0)
+    /** True while a favourite is selected (Back then has nothing to do). */
+    var onFavourites = false
     /** Bumped when wallpaper settings change, so the background restarts with them. */
     var wallpaperVersion by mutableStateOf(0)
     /** Bumped when tiles-per-row settings change. */
@@ -55,6 +59,8 @@ class HomeActivity : ComponentActivity() {
                     overlay != Overlay.None -> overlay = Overlay.None
                     moving != null -> moving = null
                     allApps -> allApps = false
+                    // Anywhere else on the home view (Home Assistant tiles, header): straight to the favourites.
+                    !onFavourites -> toFavourites++
                 }
             }
         })

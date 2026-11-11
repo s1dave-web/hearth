@@ -340,6 +340,10 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
     val dock = remember { FocusRequester() }
     // One requester per favourite and per app in the grid, so up/down keep the column between them.
     val favReqs = remember(favourites.size) { List(favourites.size) { FocusRequester() } }
+    var lastFav by remember { mutableStateOf(0) }
+    LaunchedEffect(act.toFavourites) {
+        if (act.toFavourites > 0) runCatching { favReqs[lastFav.coerceIn(0, favReqs.lastIndex)].requestFocus() }
+    }
     val appReqs = remember(others.size) { List(others.size) { FocusRequester() } }
     var title by remember { mutableStateOf("") }
     var inGrid by remember { mutableStateOf(false) }
@@ -367,12 +371,12 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
         }
     }
     fun click(a: AppEntry) { if (act.moving != null) act.moving = null else act.hearth.apps.launch(a) }
-    fun atHome() { inGrid = false; act.allApps = false }
+    fun atHome() { inGrid = false; act.allApps = false; act.onFavourites = false }
 
     BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
         val h = maxHeight
         val goal = if (act.allApps) -h else 0.dp
-        val shift = animateDpAsState(goal, tween(300), label = "slide")
+        val shift = animateDpAsState(goal, tween(260, easing = MOVE_EASING), label = "slide")
         // Hide the selector while the screen slides, so it doesn't fly past the clock on the way.
         val ring = LocalFocusRing.current
         val sliding by remember(goal) { derivedStateOf { kotlin.math.abs((shift.value - goal).value) > 0.5f } }
@@ -404,7 +408,7 @@ private fun Body(act: HomeActivity, entities: Map<String, Entity>, status: HaSta
                         val moveKey = moveKeys(a, rows = false)
                         AppTile(
                             a, moving = act.moving == a.pkg, modifier = Modifier.weight(1f).focusRequester(favReqs[k]), showLabel = false, tileHeight = barTileH,
-                            onFocused = { atHome(); title = a.label },
+                            onFocused = { atHome(); title = a.label; lastFav = k; act.onFavourites = true },
                             // Down from a favourite lands on the app in the same column of All apps.
                             onMoveKey = { key ->
                                 moveKey(key) || (key == Key.DirectionDown && appReqs.isNotEmpty() &&

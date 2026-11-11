@@ -208,7 +208,13 @@ fun FocusRingLayer(ring: FocusRing, visible: Boolean) {
     // (otherwise the frame shows one frame at the destination before gliding - a visible jump).
     val starting = remember { booleanArrayOf(false) }
     val hasTarget by remember { derivedStateOf { ring.target != null } }
-    val alpha = animateFloatAsState(if (visible && !ring.sliding && hasTarget) 1f else 0f, tween(if (ring.sliding) 60 else 120), label = "ring")
+    // Vanishes instantly when the screen starts sliding (a fade-out would show it darting off-screen),
+    // then fades back in on the selected item once the slide has finished.
+    val alpha = remember { Animatable(0f) }
+    val show = visible && !ring.sliding && hasTarget
+    LaunchedEffect(show, ring.sliding) {
+        if (!show && ring.sliding) alpha.snapTo(0f) else alpha.animateTo(if (show) 1f else 0f, tween(120))
+    }
     val owner = ring.owner                       // the only per-move recomposition
     if (owner !== ownerRef[0]) {
         ownerRef[0] = owner
