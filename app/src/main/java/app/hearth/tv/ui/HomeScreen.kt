@@ -310,7 +310,7 @@ private fun RoundButton(icon: Int, description: String, tint: Color = Palette.te
     Box(
         Modifier.size(56.dp).focusLook(focused, radius = 28)
             .clip(CircleShape)
-            .background(if (focused) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.06f))
+            .background(androidx.compose.animation.animateColorAsState(if (focused) Color.White.copy(alpha = 0.22f) else Color.White.copy(alpha = 0.06f), moveSpec(), label = "btn").value)
             .border(1.dp, Color.White.copy(alpha = 0.14f), CircleShape)
             .tvClick(onFocus = { focused = it }, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -538,7 +538,7 @@ private fun PagedRows(
     val requesters = remember(count) { List(count) { FocusRequester() } }
     val stride = rowHeight + gap
     val goalOffset = -(stride * top)
-    val offset by animateDpAsState(goalOffset, tween(MOVE_MS, easing = FastOutSlowInEasing), label = "rows")
+    val offset by animateDpAsState(goalOffset, moveSpec(), label = "rows")
     // Tell the tiles how much further the window will move this slide (read when they report their position).
     val pending = remember { PendingShift() }
     pending.dy = with(LocalDensity.current) { (goalOffset - offset).toPx() }
@@ -600,11 +600,14 @@ private fun EntityTile(act: HomeActivity, e: Entity, onFocused: () -> Unit) {
             .focusLook(focused, radius = 18)
             .clip(RoundedCornerShape(18.dp))
             .background(
-                when {
-                    focused -> TILE_FOCUSED
-                    lit -> TILE_LIT
-                    else -> TILE_BG
-                }
+                androidx.compose.animation.animateColorAsState(
+                    when {
+                        focused -> TILE_FOCUSED
+                        lit -> TILE_LIT
+                        else -> TILE_BG
+                    },
+                    moveSpec(), label = "tile",
+                ).value
             )
             .tvClick(
                 onFocus = { focused = it; if (it) onFocused() },
@@ -660,7 +663,7 @@ private fun WideTile(title: String, action: String, onFocused: () -> Unit, onCli
             .fillMaxWidth().height(TILE_H)
             .focusLook(focused, radius = 18)
             .clip(RoundedCornerShape(18.dp))
-            .background(if (focused) TILE_FOCUSED else TILE_BG)
+            .background(androidx.compose.animation.animateColorAsState(if (focused) TILE_FOCUSED else TILE_BG, moveSpec(), label = "tile").value)
             .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(18.dp))
             .tvClick(onFocus = { focused = it; if (it) onFocused() }, onClick = onClick)
             .padding(14.dp),

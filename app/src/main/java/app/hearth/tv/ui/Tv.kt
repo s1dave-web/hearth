@@ -150,12 +150,18 @@ val LocalFocusRing = compositionLocalOf<FocusRing?> { null }
 class PendingShift { var dy = 0f }
 val LocalPendingShift = compositionLocalOf<PendingShift?> { null }
 
-/** One duration for the highlight and the row slides, so they move as one. */
-const val MOVE_MS = 240
+/**
+ * One timing for everything that reacts to a remote press: the highlight, the tile's colour and growth,
+ * and row slides. Short, and front-loaded (most of the distance in the first few frames) so it feels
+ * immediate but still glides into place.
+ */
+const val MOVE_MS = 170
+val MOVE_EASING = androidx.compose.animation.core.CubicBezierEasing(0.2f, 0.9f, 0.3f, 1f)
+fun <T> moveSpec() = tween<T>(MOVE_MS, easing = MOVE_EASING)
 
 /** Grows a little when focused. In a layer with a [FocusRing] the ring glides to it; otherwise it gets its own outline. */
 fun Modifier.focusLook(focused: Boolean, radius: Int = 14): Modifier = composed {
-    val scale by animateFloatAsState(if (focused) FOCUS_SCALE else 1f, spring(dampingRatio = 0.8f, stiffness = 500f), label = "focus")
+    val scale by animateFloatAsState(if (focused) FOCUS_SCALE else 1f, moveSpec(), label = "focus")
     val ring = LocalFocusRing.current
     val pending = LocalPendingShift.current
     val bounds = remember { arrayOfNulls<Rect>(1) }
@@ -202,7 +208,7 @@ fun FocusRingLayer(ring: FocusRing, visible: Boolean) {
         if (!starting[0]) { progress.snapTo(1f); return@LaunchedEffect }
         progress.snapTo(0f)
         starting[0] = false
-        progress.animateTo(1f, tween(MOVE_MS, easing = FastOutSlowInEasing))
+        progress.animateTo(1f, moveSpec())
     }
     LaunchedEffect(ring.sliding) { if (ring.sliding) { starting[0] = false; progress.snapTo(1f) } }
     val t = ring.target
