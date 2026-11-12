@@ -91,22 +91,31 @@ class AppRepository(private val context: Context, private val prefs: Prefs) {
     private fun publish(visible: List<AppEntry>) {
         _apps.value = visible
         // First run: the first four apps become favourites, so the bar is never empty.
-        val all = prefs.favourites ?: visible.take(prefs.favouriteCount).map { it.pkg }.also { prefs.favourites = it }
+        if (prefs.favourites == null) prefs.favourites = visible.take(prefs.favouriteCount).map { it.pkg }
         // A smaller bar just shows the first few; the rest go back to the all-apps grid (and return if the bar grows).
-        val fav = all.take(prefs.favouriteCount)
+        val fav = liveFavourites(visible)
         val byPkg = visible.associateBy { it.pkg }
         _favourites.value = fav.mapNotNull { byPkg[it] }
         _others.value = visible.filter { it.pkg !in fav }
     }
 
-    fun isFavourite(pkg: String) = pkg in prefs.favourites.orEmpty().take(prefs.favouriteCount)
+    /**
+     * The favourites actually in the bar: saved ones that are still installed and not hidden, up to the bar size.
+     * Apps that were uninstalled, hidden, or only exist on another TV (from a restored backup) never take up a place.
+     */
+    private fun liveFavourites(visible: List<AppEntry> = _apps.value): List<String> {
+        val shown = visible.mapTo(HashSet()) { it.pkg }
+        return prefs.favourites.orEmpty().filter { it in shown }.distinct().take(prefs.favouriteCount)
+    }
+
+    fun isFavourite(pkg: String) = pkg in liveFavourites()
 
     /** Re-sorts favourites and the grid after the bar size changes. */
     fun relayout() = publish(_apps.value)
 
     /** Adds or removes a favourite. Returns false when the bar is already full. */
     fun toggleFavourite(pkg: String): Boolean {
-        val fav = prefs.favourites.orEmpty().take(prefs.favouriteCount)
+        val fav = liveFavourites()
         prefs.favourites = when {
             pkg in fav -> fav - pkg
             fav.size >= prefs.favouriteCount -> return false
@@ -126,7 +135,7 @@ class AppRepository(private val context: Context, private val prefs: Prefs) {
 
     /** Moves an app by [by] places within its own group (the favourites bar or the grid) and remembers it. */
     fun move(pkg: String, by: Int) {
-        val fav = prefs.favourites.orEmpty().take(prefs.favouriteCount).toMutableList()
+        val fav = liveFavourites().toMutableList()
         if (pkg in fav) {
             val i = fav.indexOf(pkg)
             val j = i + by
