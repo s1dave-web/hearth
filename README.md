@@ -68,6 +68,17 @@ Got more tiles than fit? Hearth shows as many whole rows as there is room for (o
 
 To go back to your previous launcher, run the same command with that launcher's activity, or uninstall Hearth.
 
+### Fire TV
+
+Fire OS keeps Home for Amazon's launcher and ignores `set-home-activity`. Hearth includes a small accessibility service, **Hearth home button**, that brings Hearth back whenever Amazon's home screen appears: after Home, after Back out of an app, and at boot. It only watches Amazon's launcher, and Amazon's launcher stays installed. Turn it on once over adb:
+
+```bash
+adb shell settings put secure enabled_accessibility_services app.hearth.tv/app.hearth.tv.fire.FireHomeService
+adb shell settings put secure accessibility_enabled 1
+```
+
+Pin Hearth to the front of Amazon's apps row as well. Hearth then opens straight away by pressing that tile; without it, Android makes Hearth wait about 5 seconds after Home before it can come back. To turn it off: `adb shell settings put secure enabled_accessibility_services ""`.
+
 ## Set up Home Assistant
 
 1. In Home Assistant, open your profile, then **Security** → **Long-lived access tokens** → **Create token**.

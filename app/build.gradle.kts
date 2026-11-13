@@ -21,8 +21,8 @@ android {
         applicationId = "app.hearth.tv"
         minSdk = 26          // Android 8.0+: every Shield, Chromecast/Google TV and most TV boxes
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.2.0"
     }
 
     signingConfigs {

@@ -161,6 +161,8 @@ class AppRepository(private val context: Context, private val prefs: Prefs) {
     }
 
     fun openAndroidSettings() {
+        // Fire OS can open Settings by way of Amazon's home screen; don't bounce it straight back.
+        app.hearth.tv.fire.FireHomeService.passThrough()
         context.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 

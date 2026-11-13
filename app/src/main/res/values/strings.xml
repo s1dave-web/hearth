@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="fire_home_label">Hearth home button</string>
+    <string name="fire_home_description">On Fire TV, brings Hearth back whenever Amazon\'s home screen appears. It only watches Amazon\'s launcher.</string>
+</resources>

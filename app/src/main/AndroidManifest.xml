@@ -49,5 +49,18 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Fire TV only: Fire OS keeps Home for Amazon's launcher, so this brings Hearth back over it. -->
+        <service
+            android:name=".fire.FireHomeService"
+            android:exported="true"
+            android:label="@string/fire_home_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/fire_home_service" />
+        </service>
     </application>
 </manifest>
